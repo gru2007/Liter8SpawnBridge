@@ -7,7 +7,7 @@
  * broad propagation hook it only injects into /usr/libexec/xpcproxy.
  *
  * xpcproxy receives:
- *   /usr/lib/lhook.dylib
+ *   /usr/lib/lhook
  *   /var/jb/usr/lib/Liter8SpawnBridge.dylib
  *
  * SpawnBridge then decides whether the final SETEXEC target is one of:
@@ -34,7 +34,7 @@
         (const void *)(unsigned long)&_replacee                                      \
     };
 
-static const char *kSelf = "/usr/lib/lhook.dylib";
+static const char *kSelf = "/usr/lib/lhook";
 static const char *kBridge = "/var/jb/usr/lib/Liter8SpawnBridge.dylib";
 
 /* Deliberately different from the old broad .lhook_enabled marker. */
