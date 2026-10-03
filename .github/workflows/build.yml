@@ -86,7 +86,8 @@ jobs:
           cat > "$ROOT/DEBIAN/postinst" <<'POSTINST'
           #!/bin/sh
           mkdir -p /var/jb/tmp
-          touch /var/jb/.lhook_enabled
+          echo "[Liter8SpawnBridge] Installed. Not enabling /var/jb/.lhook_enabled automatically." >&2
+          echo "[Liter8SpawnBridge] Enable injection manually only after the device has completed booting." >&2
           exit 0
           POSTINST
           chmod 0755 "$ROOT/DEBIAN/postinst"
