@@ -47,7 +47,7 @@ Only the three Marketplace daemons above receive ElleKit's TweakLoader. `iconser
 GitHub Actions builds:
 
 - `Liter8SpawnBridge.dylib` — directly injected into xpcproxy.
-- `lhook-scoped.dylib` — replacement for Liter8's broad `/usr/lib/lhook.dylib`.
+- `lhook-scoped.dylib` — replacement for Liter8's broad `/usr/lib/lhook`.
 - `com.gru2007.liter8spawnbridge_<version>_iphoneos-arm64.deb`
 
 The deb installs:
@@ -78,7 +78,7 @@ Do not create the old `.lhook_enabled` marker.
 
 ## Install the scoped system lhook
 
-Replacing `/usr/lib/lhook.dylib` requires Liter8 SSHRD because the System volume is read-only during normal boot.
+Replacing `/usr/lib/lhook` requires Liter8 SSHRD because the System volume is read-only during normal boot.
 
 Boot SSHRD, mount System + Data, then:
 
@@ -89,10 +89,10 @@ mount_apfs /dev/disk1s2 /mnt2 2>/dev/null || true
 mount -u -o rw /dev/disk1s1 2>/dev/null || true
 mount -u -o rw /dev/disk1s2 2>/dev/null || true
 
-cp -p /mnt1/usr/lib/lhook.dylib /mnt1/usr/lib/lhook.dylib.pre-scoped
-cp /mnt2/jb/usr/share/liter8spawnbridge/lhook-scoped.dylib /mnt1/usr/lib/lhook.dylib
-chmod 0755 /mnt1/usr/lib/lhook.dylib
-chown root:wheel /mnt1/usr/lib/lhook.dylib
+cp -p /mnt1/usr/lib/lhook /mnt1/usr/lib/lhook.pre-scoped
+cp /mnt2/jb/usr/share/liter8spawnbridge/lhook-scoped.dylib /mnt1/usr/lib/lhook
+chmod 0755 /mnt1/usr/lib/lhook
+chown root:wheel /mnt1/usr/lib/lhook
 sync
 ```
 
@@ -163,7 +163,7 @@ rm -f /mnt2/jb/.lhook_scoped_enabled /mnt2/jb/.lhook_scoped_debug
 To restore the previous lhook:
 
 ```sh
-cp -p /mnt1/usr/lib/lhook.dylib.pre-scoped /mnt1/usr/lib/lhook.dylib
+cp -p /mnt1/usr/lib/lhook.pre-scoped /mnt1/usr/lib/lhook
 sync
 ```
 
