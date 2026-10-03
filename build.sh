@@ -52,7 +52,7 @@ build_universal_dylib \
   "/var/jb/usr/lib/Liter8SpawnBridge.dylib"
 
 build_universal_dylib \
-  "lhook-scoped" \
+  "lhook-universal" \
   "src/scoped_lhook.c" \
   "/usr/lib/lhook"
 
