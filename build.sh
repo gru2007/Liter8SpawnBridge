@@ -54,7 +54,7 @@ build_universal_dylib \
 build_universal_dylib \
   "lhook-scoped" \
   "src/scoped_lhook.c" \
-  "/usr/lib/lhook.dylib"
+  "/usr/lib/lhook"
 
 echo
 echo "Built:"
