@@ -1,0 +1,126 @@
+name: Build SpawnBridge
+
+on:
+  push:
+    branches: [ main, spawnbridge ]
+    tags: [ 'v*' ]
+  pull_request:
+  workflow_dispatch:
+    inputs:
+      release_tag:
+        description: 'Optional release tag, e.g. v0.1.0'
+        required: false
+        type: string
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Select Xcode
+        run: |
+          sudo xcode-select -s /Applications/Xcode.app/Contents/Developer
+          xcodebuild -version
+
+      - name: Build universal dylib
+        run: ./build.sh
+
+      - name: Upload raw build
+        uses: actions/upload-artifact@v4
+        with:
+          name: Liter8SpawnBridge-raw
+          path: |
+            dist/Liter8SpawnBridge.dylib
+            dist/Liter8SpawnBridge.plist
+
+  package:
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Download raw build
+        uses: actions/download-artifact@v4
+        with:
+          name: Liter8SpawnBridge-raw
+          path: dist
+
+      - name: Set version
+        id: version
+        shell: bash
+        run: |
+          TAG="${GITHUB_REF_NAME}"
+          INPUT_TAG="${{ inputs.release_tag }}"
+          if [[ -n "$INPUT_TAG" ]]; then TAG="$INPUT_TAG"; fi
+          if [[ "$TAG" == v* ]]; then
+            VERSION="${TAG#v}"
+          else
+            VERSION="0.1.0+${GITHUB_SHA::7}"
+          fi
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+
+      - name: Build rootless deb
+        shell: bash
+        run: |
+          set -euxo pipefail
+          ROOT="$RUNNER_TEMP/pkg"
+          mkdir -p "$ROOT/DEBIAN" "$ROOT/var/jb/usr/lib/TweakInject"
+          cp dist/Liter8SpawnBridge.dylib "$ROOT/var/jb/usr/lib/TweakInject/"
+          cp dist/Liter8SpawnBridge.plist "$ROOT/var/jb/usr/lib/TweakInject/"
+          cat > "$ROOT/DEBIAN/control" <<CONTROL
+          Package: com.gru2007.liter8spawnbridge
+          Name: Liter8 SpawnBridge
+          Version: ${{ steps.version.outputs.version }}
+          Architecture: iphoneos-arm64
+          Description: Restores Liter8/ElleKit injection across xpcproxy spawn transitions for selected system daemons.
+          Maintainer: gru2007
+          Author: gru2007
+          Section: Tweaks
+          Depends: ellekit
+          Firmware: >= 15.0
+          CONTROL
+          cat > "$ROOT/DEBIAN/postinst" <<'POSTINST'
+          #!/bin/sh
+          mkdir -p /var/jb/tmp
+          touch /var/jb/.lhook_enabled
+          exit 0
+          POSTINST
+          chmod 0755 "$ROOT/DEBIAN/postinst"
+          dpkg-deb --root-owner-group -Zxz --build "$ROOT" \
+            "dist/com.gru2007.liter8spawnbridge_${{ steps.version.outputs.version }}_iphoneos-arm64.deb"
+
+      - name: Checksums
+        run: |
+          cd dist
+          sha256sum Liter8SpawnBridge.dylib Liter8SpawnBridge.plist *.deb > SHA256SUMS.txt
+
+      - name: Upload packaged build
+        uses: actions/upload-artifact@v4
+        with:
+          name: Liter8SpawnBridge
+          path: dist/*
+
+      - name: Publish tag release
+        if: startsWith(github.ref, 'refs/tags/v')
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "${GITHUB_REF_NAME}" dist/* \
+            --repo "$GITHUB_REPOSITORY" \
+            --title "Liter8 SpawnBridge ${GITHUB_REF_NAME}" \
+            --generate-notes
+
+      - name: Publish manual release
+        if: github.event_name == 'workflow_dispatch' && inputs.release_tag != ''
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "${{ inputs.release_tag }}" dist/* \
+            --repo "$GITHUB_REPOSITORY" \
+            --target "$GITHUB_SHA" \
+            --title "Liter8 SpawnBridge ${{ inputs.release_tag }}" \
+            --generate-notes
