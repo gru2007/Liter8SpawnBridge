@@ -98,18 +98,18 @@ jobs:
 
           mkdir -p /var/jb/tmp
 
-          # Disable the old broad propagation mode. The replacement scoped lhook
-          # uses a different marker and must be installed from SSHRD first.
+          # Keep injection disabled until the universal /usr/lib/lhook has been
+          # installed from SSHRD and the device has completed a normal boot.
           rm -f /var/jb/.lhook_enabled /var/jb/.lhook_debug
 
-          # Remove v0.1.x's ElleKit-loaded copy. v0.2 is injected directly into
-          # xpcproxy by the scoped system lhook instead.
+          # Remove the obsolete v0.1.x ElleKit-loaded copy. v0.3's router is
+          # inserted directly into xpcproxy by the universal system lhook.
           rm -f /var/jb/usr/lib/TweakInject/Liter8SpawnBridge.dylib
           rm -f /var/jb/usr/lib/TweakInject/Liter8SpawnBridge.plist
 
-          echo "[Liter8SpawnBridge] Installed direct bridge." >&2
-          echo "[Liter8SpawnBridge] Broad lhook mode has been disabled." >&2
-          echo "[Liter8SpawnBridge] Install lhook-universal.dylib as /usr/lib/lhook.dylib from SSHRD, then enable /var/jb/.lhook_scoped_enabled." >&2
+          echo "[Liter8SpawnBridge] Installed universal router." >&2
+          echo "[Liter8SpawnBridge] Injection is disabled until you re-enable it manually." >&2
+          echo "[Liter8SpawnBridge] Install lhook-universal.dylib as /usr/lib/lhook from SSHRD, boot normally, then touch /var/jb/.lhook_enabled." >&2
           exit 0
           POSTINST
           chmod 0755 "$ROOT/DEBIAN/postinst"
