@@ -32,9 +32,15 @@ xpcproxy
           │
           ▼
     matching TweakInject tweaks
+
+iconservicesagent
+          │
+          │ add ONLY /usr/lib/systemhook.dylib
+          ▼
+  Liter8 icon read-extension helper
 ```
 
-Only the three final daemons above receive ElleKit's TweakLoader.
+Only the three Marketplace daemons above receive ElleKit's TweakLoader. `iconservicesagent` is handled separately and receives only Liter8's existing `/usr/lib/systemhook.dylib` so rootless app icons keep working; it does not receive ElleKit.
 
 ## Artifacts
 
