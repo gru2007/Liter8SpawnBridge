@@ -51,6 +51,21 @@ Use the `.deb` produced by GitHub Actions:
 dpkg -i com.gru2007.liter8spawnbridge_*_iphoneos-arm64.deb
 ```
 
+**Important:** the package does **not** enable `/var/jb/.lhook_enabled` automatically. Liter8's own provisioning intentionally disables that marker for first boot. Do not leave global lhook propagation enabled across a reboot while this bridge is still experimental.
+
+Enable it only after the device has fully booted:
+
+```sh
+touch /var/jb/.lhook_enabled
+touch /var/jb/.lhook_debug
+```
+
+Before rebooting, disable it again:
+
+```sh
+rm -f /var/jb/.lhook_enabled
+```
+
 Then restart the target services:
 
 ```sh
@@ -101,7 +116,14 @@ A tag such as `v0.1.0` automatically creates a GitHub Release. Alternatively run
 
 ## Recovery
 
-If system-process behavior becomes unstable, remove/disable the tweak from SSH or a recovery ramdisk:
+If the device stalls during boot and SSH is still reachable, disable propagation first:
+
+```sh
+rm -f /var/jb/.lhook_enabled /var/jb/.lhook_debug
+```
+
+Then remove/disable SpawnBridge:
+
 
 ```sh
 rm -f /var/jb/usr/lib/TweakInject/Liter8SpawnBridge.dylib
