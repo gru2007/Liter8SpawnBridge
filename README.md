@@ -1,72 +1,109 @@
 # Liter8 SpawnBridge
 
-Experimental compatibility bridge for **Xplo8E/Liter8** tweak injection on iOS/iPadOS 26/27.
+Experimental **scoped** tweak-injection bridge for Xplo8E/Liter8 on iOS/iPadOS 26/27.
 
-## Why
+## v0.2 design
 
-On the tested iPadOS 26 build, Liter8 successfully injects `lhook.dylib` and ElleKit's `TweakLoader.dylib` into `/usr/libexec/xpcproxy`, but the injected environment is lost when that `xpcproxy` instance performs the final `posix_spawn(..., POSIX_SPAWN_SETEXEC, ...)` into selected launchd services.
+The original Liter8 lhook propagates its payloads broadly once `/var/jb/.lhook_enabled` exists. That is useful for generic tweak injection, but it is too aggressive for this Marketplace experiment and can destabilize boot.
 
-Observed example:
-
-```text
-[lhook] injecting /usr/libexec/xpcproxy
-[lhook] loaded into pid 10041
-# PID 10041 later becomes managedappdistributiond,
-# but there is no second lhook load for the final executable.
-```
-
-`xpcproxy` on this build imports `_posix_spawn` directly. SpawnBridge therefore loads as an ElleKit tweak **inside xpcproxy** and uses `MSHookFunction` to hook `posix_spawn`/`posix_spawnp` at runtime rather than relying on dyld `__interpose`.
-
-For a small allowlist of targets it adds back:
+v0.2 uses a much narrower chain:
 
 ```text
-/usr/lib/lhook.dylib
-/var/jb/usr/lib/TweakLoader.dylib
+launchd
+  │
+  │ scoped lhook: ONLY xpcproxy
+  ▼
+xpcproxy
+  │
+  │ Liter8SpawnBridge.dylib (direct DYLD interpose, no ElleKit here)
+  │
+  ├─ unrelated target ───────────────► untouched
+  │
+  └─ managedappdistributiond
+     appstorecomponentsd
+     installd
+          │
+          │ add ONLY /var/jb/usr/lib/TweakLoader.dylib
+          ▼
+       target daemon
+          │
+          ▼
+        ElleKit
+          │
+          ▼
+    matching TweakInject tweaks
 ```
 
-to `DYLD_INSERT_LIBRARIES` before the final spawn/SETEXEC transition.
+Only the three final daemons above receive ElleKit's TweakLoader.
 
-## Target allowlist
+## Artifacts
 
-The initial build only modifies launches of:
+GitHub Actions builds:
 
-- `managedappdistributiond`
-- `appstorecomponentsd`
-- `installd`
+- `Liter8SpawnBridge.dylib` — directly injected into xpcproxy.
+- `lhook-scoped.dylib` — replacement for Liter8's broad `/usr/lib/lhook.dylib`.
+- `com.gru2007.liter8spawnbridge_<version>_iphoneos-arm64.deb`
 
-This is deliberate. Do not make this system-wide until the approach is proven stable.
+The deb installs:
 
-## Requirements
+```text
+/var/jb/usr/lib/Liter8SpawnBridge.dylib
+/var/jb/usr/share/liter8spawnbridge/lhook-scoped.dylib
+```
 
-- Liter8 with `/usr/lib/lhook.dylib`
-- rootless bootstrap at `/var/jb`
-- ElleKit with `/var/jb/usr/lib/TweakLoader.dylib`
-- `/var/jb/.lhook_enabled`
+It deliberately removes the old v0.1.x TweakInject copy and disables the old broad markers:
 
-## Install
+```text
+/var/jb/.lhook_enabled
+/var/jb/.lhook_debug
+```
 
-Use the `.deb` produced by GitHub Actions:
+It does **not** enable scoped injection automatically.
+
+## Install v0.2 package
+
+On the normal boot:
 
 ```sh
 dpkg -i com.gru2007.liter8spawnbridge_*_iphoneos-arm64.deb
 ```
 
-**Important:** the package does **not** enable `/var/jb/.lhook_enabled` automatically. Liter8's own provisioning intentionally disables that marker for first boot. Do not leave global lhook propagation enabled across a reboot while this bridge is still experimental.
+Do not create the old `.lhook_enabled` marker.
 
-Enable it only after the device has fully booted:
+## Install the scoped system lhook
 
-```sh
-touch /var/jb/.lhook_enabled
-touch /var/jb/.lhook_debug
-```
+Replacing `/usr/lib/lhook.dylib` requires Liter8 SSHRD because the System volume is read-only during normal boot.
 
-Before rebooting, disable it again:
+Boot SSHRD, mount System + Data, then:
 
 ```sh
-rm -f /var/jb/.lhook_enabled
+mkdir -p /mnt1 /mnt2
+mount_apfs /dev/disk1s1 /mnt1 2>/dev/null || true
+mount_apfs /dev/disk1s2 /mnt2 2>/dev/null || true
+mount -u -o rw /dev/disk1s1 2>/dev/null || true
+mount -u -o rw /dev/disk1s2 2>/dev/null || true
+
+cp -p /mnt1/usr/lib/lhook.dylib /mnt1/usr/lib/lhook.dylib.pre-scoped
+cp /mnt2/jb/usr/share/liter8spawnbridge/lhook-scoped.dylib /mnt1/usr/lib/lhook.dylib
+chmod 0755 /mnt1/usr/lib/lhook.dylib
+chown root:wheel /mnt1/usr/lib/lhook.dylib
+sync
 ```
 
-Then restart the target services:
+Then perform the normal Liter8 tethered boot.
+
+## Enable after the device has booted
+
+The scoped build intentionally uses a **new marker**:
+
+```sh
+touch /var/jb/.lhook_scoped_enabled
+touch /var/jb/.lhook_scoped_debug
+```
+
+It ignores the old `.lhook_enabled` marker.
+
+Restart only the Marketplace-related jobs:
 
 ```sh
 launchctl kickstart -k user/foreground/com.apple.managedappdistributiond
@@ -74,28 +111,54 @@ launchctl kickstart -k user/foreground/com.apple.appstorecomponentsd
 launchctl kickstart -k user/501/com.apple.mobile.installd
 ```
 
-For MarketplaceEnabler testing, retry the MarketplaceKit installation from Safari after the first two daemons have restarted.
-
 ## Diagnostics
 
-SpawnBridge writes:
+Scoped lhook:
 
-```text
-/var/tmp/Liter8SpawnBridge.log
+```sh
+cat /var/jb/tmp/lhook-scoped.log
 ```
 
-Expected output:
+Expected:
 
 ```text
-[SpawnBridge] loaded pid=... posix_spawn=hooked posix_spawnp=hooked
+[lhook-scoped] injecting /usr/libexec/xpcproxy
+```
+
+SpawnBridge:
+
+```sh
+cat /var/tmp/Liter8SpawnBridge.log
+```
+
+Expected for a target daemon:
+
+```text
+[SpawnBridge] loaded pid=... direct-dyld-interpose
 [SpawnBridge] pid=... target=/System/.../managedappdistributiond env=patched
 ```
 
-Then Liter8's own log should finally show the target executable being injected, not just `xpcproxy`:
+There should be no broad stream of `[lhook] loaded into pid ...` for unrelated apps and daemons.
 
-```text
-[lhook] injecting .../managedappdistributiond
-[lhook] loaded into pid ...
+## Disable / recovery
+
+Normal boot:
+
+```sh
+rm -f /var/jb/.lhook_scoped_enabled /var/jb/.lhook_scoped_debug
+```
+
+If recovery is needed from SSHRD:
+
+```sh
+rm -f /mnt2/jb/.lhook_scoped_enabled /mnt2/jb/.lhook_scoped_debug
+```
+
+To restore the previous lhook:
+
+```sh
+cp -p /mnt1/usr/lib/lhook.dylib.pre-scoped /mnt1/usr/lib/lhook.dylib
+sync
 ```
 
 ## Build locally
@@ -106,34 +169,8 @@ Requires macOS + Xcode:
 ./build.sh
 ```
 
-Artifacts appear in `dist/`.
+Both dylibs are built universal `arm64 + arm64e`.
 
-## GitHub Actions
+## Status
 
-Every push/PR builds a universal `arm64 + arm64e` dylib. The workflow also packages a rootless `.deb`.
-
-A tag such as `v0.1.0` automatically creates a GitHub Release. Alternatively run **Build SpawnBridge → Run workflow** and provide `release_tag=v0.1.0`.
-
-## Recovery
-
-If the device stalls during boot and SSH is still reachable, disable propagation first:
-
-```sh
-rm -f /var/jb/.lhook_enabled /var/jb/.lhook_debug
-```
-
-Then remove/disable SpawnBridge:
-
-
-```sh
-rm -f /var/jb/usr/lib/TweakInject/Liter8SpawnBridge.dylib
-rm -f /var/jb/usr/lib/TweakInject/Liter8SpawnBridge.plist
-```
-
-Or globally disable Liter8 tweak propagation:
-
-```sh
-rm -f /var/jb/.lhook_enabled
-```
-
-This project is experimental and intentionally targets only the three daemons above.
+Experimental. The scope is intentionally limited to the MarketplaceKit test path; do not broaden it to system-wide injection until the scoped path is proven stable.
