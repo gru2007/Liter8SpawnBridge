@@ -8,7 +8,7 @@ on:
   workflow_dispatch:
     inputs:
       release_tag:
-        description: 'Optional release tag, e.g. v0.1.0'
+        description: 'Optional release tag, e.g. v0.2.0'
         required: false
         type: string
 
@@ -26,7 +26,7 @@ jobs:
           sudo xcode-select -s /Applications/Xcode.app/Contents/Developer
           xcodebuild -version
 
-      - name: Build universal dylib
+      - name: Build universal dylibs
         run: ./build.sh
 
       - name: Upload raw build
@@ -35,7 +35,7 @@ jobs:
           name: Liter8SpawnBridge-raw
           path: |
             dist/Liter8SpawnBridge.dylib
-            dist/Liter8SpawnBridge.plist
+            dist/lhook-scoped.dylib
 
   package:
     needs: build
@@ -59,7 +59,7 @@ jobs:
           if [[ "$TAG" == v* ]]; then
             VERSION="${TAG#v}"
           else
-            VERSION="0.1.0+${GITHUB_SHA::7}"
+            VERSION="0.2.0+${GITHUB_SHA::7}"
           fi
           echo "version=$VERSION" >> "$GITHUB_OUTPUT"
 
@@ -68,36 +68,66 @@ jobs:
         run: |
           set -euxo pipefail
           ROOT="$RUNNER_TEMP/pkg"
-          mkdir -p "$ROOT/DEBIAN" "$ROOT/var/jb/usr/lib/TweakInject"
-          cp dist/Liter8SpawnBridge.dylib "$ROOT/var/jb/usr/lib/TweakInject/"
-          cp dist/Liter8SpawnBridge.plist "$ROOT/var/jb/usr/lib/TweakInject/"
+          mkdir -p \
+            "$ROOT/DEBIAN" \
+            "$ROOT/var/jb/usr/lib" \
+            "$ROOT/var/jb/usr/share/liter8spawnbridge"
+
+          cp dist/Liter8SpawnBridge.dylib \
+            "$ROOT/var/jb/usr/lib/Liter8SpawnBridge.dylib"
+
+          cp dist/lhook-scoped.dylib \
+            "$ROOT/var/jb/usr/share/liter8spawnbridge/lhook-scoped.dylib"
+
           cat > "$ROOT/DEBIAN/control" <<CONTROL
           Package: com.gru2007.liter8spawnbridge
           Name: Liter8 SpawnBridge
           Version: ${{ steps.version.outputs.version }}
           Architecture: iphoneos-arm64
-          Description: Restores Liter8/ElleKit injection across xpcproxy spawn transitions for selected system daemons.
+          Description: Scoped xpcproxy bridge for Liter8. Only marketplace-related daemons receive ElleKit TweakLoader.
           Maintainer: gru2007
           Author: gru2007
           Section: Tweaks
           Depends: ellekit
           Firmware: >= 15.0
           CONTROL
+
           cat > "$ROOT/DEBIAN/postinst" <<'POSTINST'
           #!/bin/sh
+          set -e
+
           mkdir -p /var/jb/tmp
-          echo "[Liter8SpawnBridge] Installed. Not enabling /var/jb/.lhook_enabled automatically." >&2
-          echo "[Liter8SpawnBridge] Enable injection manually only after the device has completed booting." >&2
+
+          # Disable the old broad propagation mode. The replacement scoped lhook
+          # uses a different marker and must be installed from SSHRD first.
+          rm -f /var/jb/.lhook_enabled /var/jb/.lhook_debug
+
+          # Remove v0.1.x's ElleKit-loaded copy. v0.2 is injected directly into
+          # xpcproxy by the scoped system lhook instead.
+          rm -f /var/jb/usr/lib/TweakInject/Liter8SpawnBridge.dylib
+          rm -f /var/jb/usr/lib/TweakInject/Liter8SpawnBridge.plist
+
+          echo "[Liter8SpawnBridge] Installed direct bridge." >&2
+          echo "[Liter8SpawnBridge] Broad lhook mode has been disabled." >&2
+          echo "[Liter8SpawnBridge] Install lhook-scoped.dylib as /usr/lib/lhook.dylib from SSHRD, then enable /var/jb/.lhook_scoped_enabled." >&2
           exit 0
           POSTINST
           chmod 0755 "$ROOT/DEBIAN/postinst"
+
+          cat > "$ROOT/DEBIAN/prerm" <<'PRERM'
+          #!/bin/sh
+          rm -f /var/jb/.lhook_scoped_enabled /var/jb/.lhook_scoped_debug
+          exit 0
+          PRERM
+          chmod 0755 "$ROOT/DEBIAN/prerm"
+
           dpkg-deb --root-owner-group -Zxz --build "$ROOT" \
             "dist/com.gru2007.liter8spawnbridge_${{ steps.version.outputs.version }}_iphoneos-arm64.deb"
 
       - name: Checksums
         run: |
           cd dist
-          sha256sum Liter8SpawnBridge.dylib Liter8SpawnBridge.plist *.deb > SHA256SUMS.txt
+          sha256sum Liter8SpawnBridge.dylib lhook-scoped.dylib *.deb > SHA256SUMS.txt
 
       - name: Upload packaged build
         uses: actions/upload-artifact@v4
