@@ -8,7 +8,7 @@ on:
   workflow_dispatch:
     inputs:
       release_tag:
-        description: 'Optional release tag, e.g. v0.2.0'
+        description: 'Optional release tag, e.g. v0.3.0'
         required: false
         type: string
 
@@ -35,7 +35,7 @@ jobs:
           name: Liter8SpawnBridge-raw
           path: |
             dist/Liter8SpawnBridge.dylib
-            dist/lhook-scoped.dylib
+            dist/lhook-universal.dylib
 
   package:
     needs: build
@@ -59,7 +59,7 @@ jobs:
           if [[ "$TAG" == v* ]]; then
             VERSION="${TAG#v}"
           else
-            VERSION="0.2.0+${GITHUB_SHA::7}"
+            VERSION="0.3.0+${GITHUB_SHA::7}"
           fi
           echo "version=$VERSION" >> "$GITHUB_OUTPUT"
 
@@ -76,15 +76,15 @@ jobs:
           cp dist/Liter8SpawnBridge.dylib \
             "$ROOT/var/jb/usr/lib/Liter8SpawnBridge.dylib"
 
-          cp dist/lhook-scoped.dylib \
-            "$ROOT/var/jb/usr/share/liter8spawnbridge/lhook-scoped.dylib"
+          cp dist/lhook-universal.dylib \
+            "$ROOT/var/jb/usr/share/liter8spawnbridge/lhook-universal.dylib"
 
           cat > "$ROOT/DEBIAN/control" <<CONTROL
           Package: com.gru2007.liter8spawnbridge
           Name: Liter8 SpawnBridge
           Version: ${{ steps.version.outputs.version }}
           Architecture: iphoneos-arm64
-          Description: Scoped xpcproxy bridge for Liter8. Only marketplace-related daemons receive ElleKit TweakLoader.
+          Description: Universal two-stage Liter8 router. xpcproxy receives only the small bridge; final non-blacklisted targets receive ElleKit TweakLoader.
           Maintainer: gru2007
           Author: gru2007
           Section: Tweaks
@@ -109,14 +109,14 @@ jobs:
 
           echo "[Liter8SpawnBridge] Installed direct bridge." >&2
           echo "[Liter8SpawnBridge] Broad lhook mode has been disabled." >&2
-          echo "[Liter8SpawnBridge] Install lhook-scoped.dylib as /usr/lib/lhook.dylib from SSHRD, then enable /var/jb/.lhook_scoped_enabled." >&2
+          echo "[Liter8SpawnBridge] Install lhook-universal.dylib as /usr/lib/lhook.dylib from SSHRD, then enable /var/jb/.lhook_scoped_enabled." >&2
           exit 0
           POSTINST
           chmod 0755 "$ROOT/DEBIAN/postinst"
 
           cat > "$ROOT/DEBIAN/prerm" <<'PRERM'
           #!/bin/sh
-          rm -f /var/jb/.lhook_scoped_enabled /var/jb/.lhook_scoped_debug
+          rm -f /var/jb/.lhook_enabled /var/jb/.lhook_debug
           exit 0
           PRERM
           chmod 0755 "$ROOT/DEBIAN/prerm"
@@ -127,7 +127,7 @@ jobs:
       - name: Checksums
         run: |
           cd dist
-          sha256sum Liter8SpawnBridge.dylib lhook-scoped.dylib *.deb > SHA256SUMS.txt
+          sha256sum Liter8SpawnBridge.dylib lhook-universal.dylib *.deb > SHA256SUMS.txt
 
       - name: Upload packaged build
         uses: actions/upload-artifact@v4
